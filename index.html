@@ -1,0 +1,1661 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Super MediQueue</title>
+  <style>
+    /* ── Reset & Base ── */
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh;
+      background: #f4ece7;
+      color: #1f2937;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 14px;
+    }
+    button { border: 0; font: inherit; cursor: pointer; }
+    button:disabled { cursor: not-allowed; opacity: 0.5; }
+
+    /* ── App shell ── */
+    .app { width: min(100% - 32px, 1500px); margin: 0 auto; padding: 16px 0 48px; }
+    .stack { display: flex; flex-direction: column; gap: 16px; }
+
+    /* ── Header ── */
+    .header {
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      padding: 16px; border-bottom: 4px solid #c4c090; border-radius: 12px;
+      background: #fff; box-shadow: 0 1px 4px rgb(0 0 0 / .08);
+    }
+    h1 { margin: 0; color: #818251; font-size: 24px; line-height: 1.2; }
+    .header-controls { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; justify-content: flex-end; }
+    .called-ticket {
+      display: flex; align-items: center; padding: 4px 12px;
+      border-radius: 6px; background: rgb(255 171 125 / .2);
+      color: #e27a47; font-size: 12px; font-weight: 800;
+    }
+    .called-ticket span { margin-left: 4px; font-family: monospace; font-size: 18px; }
+    .tick-wrap { display: flex; align-items: center; gap: 8px; padding-left: 16px; border-left: 1px solid #d1d5db; }
+    .tick-label { color: #848252; font-size: 12px; font-weight: 800; text-transform: uppercase; }
+    .tick-value {
+      min-width: 74px; padding: 6px 20px; border-radius: 8px;
+      background: #848252; color: #fff;
+      font-family: monospace; font-size: 30px; font-weight: 800; text-align: center;
+      box-shadow: inset 0 2px 4px rgb(0 0 0 / .16);
+    }
+    .tick-value.flip { animation: tickFlip .25s ease; }
+
+    /* ── Toolbar ── */
+    .toolbar {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 12px;
+      padding: 12px; border-radius: 12px; background: #fff;
+      box-shadow: 0 1px 4px rgb(0 0 0 / .08); outline: 1px solid #e9e9d5;
+    }
+    .toolbar-spacer { flex: 1 1 auto; }
+    .speed-wrap { display: flex; align-items: center; gap: 8px; font-size: 11px; color: #6b7280; font-weight: 700; }
+    .speed-wrap input[type=range] { width: 90px; accent-color: #8fa9ea; }
+    .btn {
+      min-height: 40px; padding: 8px 20px; border-radius: 8px;
+      color: #fff; font-weight: 800;
+      box-shadow: 0 1px 4px rgb(0 0 0 / .16);
+      transition: transform 120ms ease, background 120ms ease;
+      white-space: nowrap;
+    }
+    .btn:active { transform: scale(.96); }
+    .btn-blue   { background: #8fa9ea; } .btn-blue:hover   { background: #7896de; }
+    .btn-orange { background: #e27a47; } .btn-orange:hover { background: #d66b38; }
+    .btn-red    { background: #ef4444; animation: pulse 1.5s ease-in-out infinite; }
+    .btn-red:hover { background: #dc2626; }
+    .btn-reset  { background: #e5e7eb; color: #4b5563; } .btn-reset:hover { background: #d1d5db; }
+
+    /* ── Event Log ── */
+    .log-panel { border-radius: 12px; background: #1e1e2e; color: #cdd6f4; overflow: hidden; box-shadow: 0 4px 8px rgb(0 0 0 / .18); }
+    .log-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 14px; background: #181825; font-size: 11px; font-weight: 800; letter-spacing: .06em; color: #a6adc8; }
+    .log-head span { color: #89b4fa; }
+    .log-clear { font-size: 10px; padding: 2px 8px; border-radius: 4px; background: #313244; color: #cdd6f4; cursor: pointer; border: 0; }
+    .log-body { height: 80px; overflow-y: auto; padding: 6px 14px; font-family: monospace; font-size: 11px; scrollbar-width: thin; scrollbar-color: #45475a #1e1e2e; }
+    .log-entry { display: flex; gap: 8px; padding: 2px 0; border-bottom: 1px solid #313244; animation: logSlideIn .25s ease; }
+    .log-tick  { color: #6c7086; min-width: 40px; }
+    .log-msg   { flex: 1; }
+    .log-arrival    { color: #a6e3a1; } .log-complete  { color: #89dceb; }
+    .log-starvation { color: #f38ba8; font-weight: 800; } .log-rescue { color: #fab387; } .log-preempt { color: #f9e2af; }
+
+    /* ── Main layout ── */
+    .main-grid { display: flex; flex-direction: column; gap: 16px; }
+    .door-panel {
+      display: flex; flex-direction: column; min-height: 300px; overflow: hidden;
+      border-top: 8px solid #c4c090; border-radius: 12px; background: #fff;
+      box-shadow: 0 4px 8px rgb(0 0 0 / .10);
+    }
+    .door-head { padding: 16px; border-bottom: 1px solid #e9e9d5; background: rgb(244 236 231 / .5); }
+    .door-head h2 { display: flex; align-items: center; gap: 8px; margin: 0; color: #5a5935; font-size: 18px; }
+    .door-head p  { margin: 4px 0 0; color: #6b7280; font-size: 10px; }
+    .arrival-list { flex: 1; overflow-y: auto; padding: 16px; background: linear-gradient(#fff, rgb(244 236 231 / .3)); scrollbar-width: thin; }
+
+    /* ── Arrival cards ── */
+    .arrival-card {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      width: 100%; margin-bottom: 12px; padding: 12px;
+      border: 2px solid currentColor; border-radius: 12px; text-align: left;
+      transition: transform 180ms ease, box-shadow 180ms ease, opacity 180ms ease;
+    }
+    .arrival-card:not(.arrived):not(.locked):hover { transform: translateY(-4px); box-shadow: 0 4px 10px rgb(0 0 0 / .16); }
+    .arrival-card.arrived { transform: scale(.95); border-color: #e5e7eb; background: #f9fafb; color: #9ca3af; opacity: .45; }
+    .arrival-card.locked  { cursor: not-allowed; }
+    .arrival-main { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .arrival-icon  { flex-shrink: 0; font-size: 40px; filter: drop-shadow(0 1px 1px rgb(0 0 0 / .25)); }
+    .arrival-title { font-size: 14px; font-weight: 800; }
+    .arrival-note  { max-width: 180px; margin-top: 2px; font-size: 10px; opacity: .8; }
+    .arrival-time  { flex-shrink: 0; padding: 4px 8px; border-radius: 6px; background: rgb(255 255 255 / .8); font-size: 10px; font-weight: 800; text-align: right; box-shadow: 0 1px 2px rgb(0 0 0 / .10); }
+    .arrival-click { margin-top: 4px; color: #2563eb; animation: pulse 1.4s ease-in-out infinite; }
+
+    /* ═══════════════════════════════════════════
+       SCENE AREA (Gather Town style)
+    ═══════════════════════════════════════════ */
+    .scene-area {
+      display: flex; flex-direction: column; gap: 0;
+      border-radius: 12px; overflow: hidden;
+      box-shadow: 0 4px 12px rgb(0 0 0 / .14);
+      border-top: 8px solid #c4c090;
+    }
+
+    /* ── Tab bar ── */
+    .algo-tabs {
+      display: flex; gap: 0;
+      background: #2d2d1f;
+    }
+    .tab-btn {
+      flex: 1; padding: 10px 8px;
+      background: #2d2d1f; color: #a8a878;
+      font-size: 12px; font-weight: 800;
+      border-right: 1px solid #3d3d2f;
+      transition: background 150ms, color 150ms;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .tab-btn:last-child { border-right: 0; }
+    .tab-btn:hover { background: #3d3d2f; color: #d4d490; }
+    .tab-btn.active { background: #4a4a22; color: #e8e855; border-bottom: 3px solid #c4c090; }
+
+    /* ── Scene panel ── */
+    .scene-panel { display: none; flex-direction: column; }
+    .scene-panel.active { display: flex; }
+
+    /* ── Scene header bar ── */
+    .scene-header {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 8px 14px;
+      background: #3a3a20; color: #e2e2c0;
+      flex-wrap: wrap;
+    }
+    .scene-header-left { display: flex; flex-direction: column; gap: 2px; }
+    .scene-title { font-size: 15px; font-weight: 800; color: #e8e855; }
+    .scene-desc  { font-size: 10px; color: #a8a878; }
+    .scene-metrics { display: flex; gap: 10px; flex-wrap: wrap; }
+    .scene-metric {
+      padding: 3px 10px; border-radius: 6px;
+      background: rgb(0 0 0 / .25); font-size: 11px;
+      font-family: monospace;
+    }
+    .scene-metric-label { color: #888; font-size: 9px; }
+    .scene-metric-val   { color: #e8e855; font-weight: 800; font-size: 13px; }
+    /* Bottom comparison bar — larger 3-item layout */
+    .comp-metric-label { color: #aaa; font-size: 11px; }
+    .comp-metric-val   { color: #e8e855; font-weight: 800; font-size: 20px; }
+    .metric-starv-ok  { color: #4ade80; }
+    .metric-starv-bad { color: #f87171; animation: shake .4s ease infinite; }
+    .queue-badge {
+      padding: 3px 10px; border-radius: 6px;
+      background: #1a1a0a; color: #c4c090;
+      font-family: monospace; font-size: 12px; font-weight: 800;
+    }
+
+    /* ── Scene viewport ── */
+    .scene-viewport {
+      position: relative;
+      width: 100%; min-height: 450px;
+      overflow: hidden;
+      background-color: #c8b88a;
+      background-image:
+        linear-gradient(45deg, #c0ae80 25%, transparent 25%),
+        linear-gradient(-45deg, #c0ae80 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #c8b88a 75%),
+        linear-gradient(-45deg, transparent 75%, #c8b88a 75%);
+      background-size: 40px 40px;
+      background-position: 0 0, 0 20px, 20px -20px, -20px 0px;
+    }
+
+    /* ── Waiting zone ── */
+    .scene-zone-wait {
+      position: absolute;
+      background: rgb(200 180 140 / .35);
+      border-radius: 8px;
+    }
+    .scene-zone-label {
+      position: absolute;
+      font-size: 9px; font-weight: 800;
+      color: rgb(100 80 40 / .65);
+      text-transform: uppercase; letter-spacing: .08em;
+    }
+
+    /* ── CSS Benches ── */
+    .scene-bench-back {
+      position: absolute;
+      background: linear-gradient(to bottom, #8B6030, #6B4010);
+      border-radius: 3px 3px 0 0;
+    }
+    .scene-bench-seat {
+      position: absolute;
+      background: linear-gradient(to bottom, #A07040, #7B5020);
+      border-radius: 0 0 3px 3px;
+      box-shadow: 0 3px 6px rgb(0 0 0 / .25);
+    }
+
+    /* ── Room: wall-based design ── */
+    .room-floor {
+      position: absolute;
+      background: #b8d0b8; /* lighter green floor */
+    }
+    .room-wall {
+      position: absolute;
+      background: #3a5a3a;
+    }
+    .room-wall-sign {
+      position: absolute;
+      font-size: 9px; font-weight: 800;
+      color: #c8f0c8; letter-spacing: .05em;
+      text-align: center; line-height: 14px;
+      background: #3a5a3a;
+      pointer-events: none;
+    }
+    /* room desk */
+    .room-desk-bar {
+      width: 88%; height: 18px;
+      background: linear-gradient(to bottom, #9B6828, #7B4810);
+      border-radius: 3px 3px 0 0;
+      box-shadow: 0 4px 0 #5B3008;
+      flex-shrink: 0;
+    }
+    /* room inner: flex layout (doctor above desk, patient below) */
+    .scene-room-inner {
+      position: absolute;
+      display: flex; flex-direction: column; align-items: center;
+      gap: 2px; padding: 2px 4px;
+      overflow: hidden;
+    }
+    .room-doc-row, .room-patient-row {
+      display: flex; flex-direction: column; align-items: center;
+      font-size: 12px;
+    }
+    /* emergency flash overlay */
+    .room-flash-overlay {
+      position: absolute; pointer-events: none;
+      border: 4px solid transparent; border-radius: 2px;
+      box-sizing: border-box;
+    }
+    .room-flash-overlay.room-flash {
+      animation: roomRedPulse 1.5s ease-in-out infinite;
+    }
+    @keyframes roomRedPulse {
+      0%,100% { border-color: transparent; box-shadow: none; }
+      50%      { border-color: #e27a47; box-shadow: inset 0 0 20px rgb(226 122 71 / .2); }
+    }
+    /* lane-wide emergency flash */
+    .scene-viewport.lane-flash-emergency {
+      animation: laneFlash 1.8s ease forwards;
+    }
+    @keyframes laneFlash {
+      0%   { filter: none; }
+      12%  { filter: brightness(1.12) hue-rotate(340deg) saturate(1.5); }
+      40%  { filter: brightness(1.05) hue-rotate(340deg) saturate(1.2); }
+      100% { filter: none; }
+    }
+
+    /* ── Entrance / exit markers ── */
+    .scene-door-marker {
+      position: absolute;
+      display: flex; flex-direction: column; align-items: center; gap: 2px;
+    }
+    .scene-door-emoji { font-size: 32px; line-height: 1; }
+    .scene-label-sm   { font-size: 9px; font-weight: 800; color: #6b5a30; background: rgb(255 255 255 / .7); border-radius: 3px; padding: 1px 4px; }
+
+    /* Overflow badge */
+    .scene-overflow {
+      position: absolute;
+      font-size: 11px; font-weight: 800;
+      color: #818251; background: #e9e9d5;
+      border: 1.5px dashed #c4c090;
+      border-radius: 8px; padding: 5px 8px; line-height: 1.4;
+      text-align: center; display: none; white-space: pre-line;
+    }
+
+    /* Progress bar (room) */
+    .room-progress { width: 70px; height: 5px; background: rgba(255,255,255,.2); border-radius: 3px; overflow: hidden; margin-top: 3px; }
+    .room-progress-fill { height: 100%; background: #a6e3a1; border-radius: 3px; transition: width .4s ease; }
+
+    /* ═══════════════════════════════════════════
+       LPC SPRITE CHARACTERS
+    ═══════════════════════════════════════════ */
+    .scene-char {
+      position: absolute;
+      display: flex; flex-direction: column; align-items: center;
+      pointer-events: none;
+      z-index: 10;
+    }
+    .scene-char.no-transition {
+      transition: none !important;
+    }
+    .char-sprite {
+      width: 64px; height: 64px;
+      background-repeat: no-repeat;
+      background-size: 832px auto;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+    /* LPC walk-cycle keyframe: 9 frames × 64px = 576px total */
+    @keyframes lpcWalk {
+      from { background-position-x:    0px; }
+      to   { background-position-x: -576px; }
+    }
+    /* Walk directions — y positions in the LPC sheet */
+    /* animation-duration is overridden inline for speed variants */
+    .char-walk-up    { background-position-y: -512px; animation: lpcWalk .72s steps(9) infinite; }
+    .char-walk-left  { background-position-y: -576px; animation: lpcWalk .72s steps(9) infinite; }
+    .char-walk-down  { background-position-y: -640px; animation: lpcWalk .72s steps(9) infinite; }
+    .char-walk-right { background-position-y: -704px; animation: lpcWalk .72s steps(9) infinite; }
+    /* Idle: first frame of walk-down */
+    .char-idle       { background-position: 0px -640px; }
+    /* Ghost/starved tint */
+    .char-starved    { filter: grayscale(.7) opacity(.6); }
+    .char-rescue     { filter: sepia(.5) saturate(1.8); }
+    .char-missed     { filter: grayscale(.4) opacity(.75); }
+
+    /* Doctor sprite (always idle, facing left / west) */
+    .char-doctor-sprite {
+      width: 64px; height: 64px;
+      background-repeat: no-repeat;
+      background-size: 832px auto;
+      image-rendering: pixelated;
+      background-position: 0px -576px; /* idle walk-left frame 0 */
+    }
+    /* Patient sprite inside room */
+    .char-room-sprite {
+      width: 64px; height: 64px;
+      background-repeat: no-repeat;
+      background-size: 832px auto;
+      image-rendering: pixelated;
+      background-position: 0px -640px; /* idle walk-down frame 0 */
+    }
+
+    /* Character overlay elements */
+    .char-bubble {
+      font-size: 14px; line-height: 1;          /* emoji-friendly size */
+      white-space: nowrap;
+      padding: 3px 6px;
+      border: 1.5px solid; border-radius: 8px 8px 8px 3px;
+      box-shadow: 0 1px 3px rgb(0 0 0 / .15);
+      margin-bottom: 2px;
+    }
+    .char-nameplate {
+      font-size: 11px; font-weight: 800;
+      background: rgba(255,255,255,.88); color: #333;
+      border-radius: 3px; padding: 0 4px; line-height: 1.5;
+      margin-top: 1px;
+    }
+    .char-badges {
+      position: absolute; top: -10px; right: -8px;
+      display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
+      z-index: 20; pointer-events: none;
+    }
+    .badge-siren  { font-size: 14px; animation: sirenFlash .5s ease-in-out infinite; }
+    .badge-rescue { font-size: 14px; animation: warnBounce 1s ease-in-out infinite; }
+    .badge-anger  { font-size: 14px; animation: popBounce .4s ease forwards; }
+    .badge-missed { font-size: 9px; font-weight: 800; background: #e27a47; color: #fff; border-radius: 3px; padding: 1px 3px; }
+    .badge-short  { font-size: 9px; font-weight: 800; background: #8fa9ea; color: #fff; border-radius: 3px; padding: 1px 3px; }
+
+    /* Bubble mood colors */
+    .mood-ok          { border-color: #bbf7d0; background: #f0fdf4; color: #166534; }
+    .mood-mild        { border-color: #fde68a; background: #fffbeb; color: #92400e; }
+    .mood-annoyed     { border-color: #fca5a5; background: #fef2f2; color: #991b1b; animation: annoyedBobble .8s ease-in-out infinite; }
+    .mood-existential { border-color: #c4b5fd; background: #f5f3ff; color: #6d28d9; animation: existPulse 2s ease-in-out infinite; }
+    .mood-gone        { border-color: #e5e7eb; background: #f3f4f6; color: #9ca3af; animation: floatBubble 3s ease-in-out infinite; }
+    .mood-seeing      { border-color: #a5f3fc; background: #ecfeff; color: #0e7490; }
+
+    /* ═══════════════════════════════════════════
+       COMPARISON BAR (all 4 algos at a glance)
+    ═══════════════════════════════════════════ */
+    .comparison-bar {
+      display: grid; grid-template-columns: repeat(4,1fr);
+      background: #1e1e0e;
+      border-top: 2px solid #3d3d20;
+    }
+    .comp-col {
+      padding: 8px 10px;
+      border-right: 1px solid #3d3d20;
+      border-top: 4px solid transparent;
+      cursor: pointer;
+      transition: background 150ms;
+    }
+    .comp-col:last-child { border-right: 0; }
+    .comp-col:hover { background: #2a2a10; }
+    .comp-col.comp-active { background: #2e2e14; }
+    .comp-title { font-size: 10px; font-weight: 800; color: #c8c870; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .comp-grid  { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 6px; font-size: 10px; font-family: monospace; }
+    .comp-item  { color: #888; }
+    .comp-item strong { color: #e8e855; }
+    .comp-starv-ok  strong { color: #4ade80; }
+    .comp-starv-bad strong { color: #f87171; }
+
+    /* ── Character Legend ── */
+    .char-legend {
+      background: #1a1a0e;
+      border-top: 1px solid #3d3d20;
+      padding: 14px 20px 18px;
+    }
+    .char-legend-title {
+      font-size: 11px; font-weight: 800; letter-spacing: .08em;
+      color: #a8a860; margin-bottom: 12px; text-transform: uppercase;
+    }
+    .char-legend-row {
+      display: flex; flex-wrap: wrap; gap: 6px 20px; align-items: flex-start;
+    }
+    .char-legend-item {
+      display: flex; flex-direction: column; align-items: center;
+      width: 88px; text-align: center;
+    }
+    .char-legend-item--badge { justify-content: flex-start; }
+    .char-legend-sprite {
+      width: 64px; height: 64px;
+      background-repeat: no-repeat;
+      background-size: 832px auto;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+    .char-legend-badge-row {
+      height: 64px; display: flex; align-items: center; justify-content: center;
+    }
+    .char-legend-name {
+      font-size: 12px; font-weight: 800; color: #e8e855;
+      margin-top: 4px; white-space: nowrap;
+    }
+    .char-legend-desc {
+      font-size: 10px; color: #888; line-height: 1.4; margin-top: 2px;
+    }
+    .char-legend-divider {
+      width: 1px; background: #3d3d20; align-self: stretch; margin: 0 4px;
+    }
+
+    /* ── Toast ── */
+    .toast { position: fixed; top: 40px; left: 50%; z-index: 50; animation: toastBounce .8s ease infinite; }
+    .toast-card { padding: 12px 24px; border: 4px solid; border-radius: 999px; text-align: center; box-shadow: 0 20px 36px rgb(0 0 0 / .25); }
+    .toast-ok     { border-color: #4ade80; background: #f0fdf4; color: #166534; }
+    .toast-missed { border-color: #f87171; background: #fef2f2; color: #991b1b; }
+    .toast-icon  { margin-bottom: 4px; font-size: 30px; }
+    .toast-title { font-size: 18px; font-weight: 800; }
+    .toast-sub   { margin-top: 4px; font-size: 14px; font-weight: 800; }
+
+    /* ═══════════════════════════════════════════
+       KEYFRAMES
+    ═══════════════════════════════════════════ */
+    @keyframes tickFlip {
+      0%{transform:scaleY(1);}45%{transform:scaleY(0);}55%{transform:scaleY(0);}100%{transform:scaleY(1);}
+    }
+    @keyframes logSlideIn {
+      from{transform:translateX(-12px);opacity:0;}to{transform:translateX(0);opacity:1;}
+    }
+    @keyframes toastBounce {
+      0%,100%{transform:translateX(-50%) translateY(-8%);}50%{transform:translateX(-50%) translateY(0);}
+    }
+    @keyframes pulse  { 0%,100%{opacity:1;} 50%{opacity:.6;} }
+    @keyframes shake  { 0%,100%{transform:translateX(0);}20%{transform:translateX(-4px);}40%{transform:translateX(4px);}60%{transform:translateX(-3px);}80%{transform:translateX(3px);} }
+    @keyframes sirenFlash { 0%,100%{opacity:1;transform:scale(1);}50%{opacity:.5;transform:scale(1.2);} }
+    @keyframes warnBounce { 0%,100%{transform:translateY(-4px);}50%{transform:translateY(-8px);} }
+    @keyframes popBounce  { 0%{transform:scale(0) translateY(-4px);}60%{transform:scale(1.2) translateY(-6px);}100%{transform:scale(1) translateY(-4px);} }
+    @keyframes annoyedBobble { 0%,100%{transform:rotate(-2deg);}50%{transform:rotate(2deg);} }
+    @keyframes existPulse    { 0%,100%{transform:scale(1);}50%{transform:scale(1.06);} }
+    @keyframes floatBubble   { 0%,100%{transform:translateY(0);}50%{transform:translateY(-4px);} }
+    @keyframes fadeOutUp {
+      0%{transform:translateY(0);opacity:1;}
+      100%{transform:translateY(-24px);opacity:0;}
+    }
+
+    /* ── Responsive ── */
+    @media(min-width:1100px) {
+      .main-grid{flex-direction:row;}
+      .door-panel{width:240px;min-width:240px;}
+      .scene-area{flex:1;min-width:0;}
+    }
+    @media(max-width:760px) {
+      .app{width:min(100% - 20px,1500px);}
+      .header{align-items:flex-start;flex-direction:column;}
+      .header-controls{width:100%;justify-content:flex-start;}
+      .tick-wrap{padding-left:0;border-left:0;}
+      .comparison-bar{grid-template-columns:repeat(2,1fr);}
+    }
+  </style>
+</head>
+<body>
+<main class="app stack">
+  <header class="header">
+    <h1>🏥 Super MediQueue</h1>
+    <div class="header-controls">
+      <div class="called-ticket">Now Serving: <span id="globalMaxCalledTicket">--</span></div>
+      <div class="tick-wrap">
+        <span class="tick-label">Tick Time</span>
+        <span id="tick" class="tick-value">0</span>
+      </div>
+    </div>
+  </header>
+
+  <section class="toolbar" aria-label="Time Controls">
+    <button id="advanceBtn" class="btn btn-blue">⏱️ Advance Tick</button>
+    <button id="autoBtn"    class="btn btn-orange">▶️ Auto Play</button>
+    <div class="speed-wrap">
+      <span>⚡ Speed</span>
+      <input id="speedSlider" type="range" min="1" max="5" value="3" step="1">
+      <span id="speedLabel">Normal</span>
+    </div>
+    <div class="toolbar-spacer"></div>
+    <button id="resetBtn" class="btn btn-reset">🔄 Reset</button>
+  </section>
+
+  <!-- Event Log (hidden) -->
+  <div class="log-panel" style="display:none">
+    <div class="log-head">📋 Event Log <span id="logCount">0 entries</span><button class="log-clear" id="logClearBtn">Clear</button></div>
+    <div class="log-body" id="logBody"></div>
+  </div>
+
+  <section class="main-grid">
+    <aside class="door-panel">
+      <div class="door-head">
+        <h2>🚪 Hospital Entrance</h2>
+        <p>Click a patient card to check in — the system decides if they missed their slot</p>
+      </div>
+      <div id="arrivalList" class="arrival-list"></div>
+    </aside>
+
+    <!-- Scene area with tabs -->
+    <div class="scene-area" id="sceneArea">
+      <div class="algo-tabs" id="algoTabs">
+        <!-- filled by JS -->
+      </div>
+      <div id="scenePanels">
+        <!-- filled by JS -->
+      </div>
+      <div class="comparison-bar" id="comparisonBar">
+        <!-- filled by JS -->
+      </div>
+
+      <!-- Character Legend -->
+      <div class="char-legend">
+        <div class="char-legend-title">Character Guide</div>
+        <div class="char-legend-row">
+
+          <div class="char-legend-item">
+            <div class="char-legend-sprite" style="background-image:url('assets/char_doctor.png');background-position:0px -576px;"></div>
+            <div class="char-legend-name">Doctor</div>
+            <div class="char-legend-desc">Waits in the exam room<br>sees one patient at a time</div>
+          </div>
+
+          <div class="char-legend-item">
+            <div class="char-legend-sprite" style="background-image:url('assets/char_normal.png');background-position:0px -640px;"></div>
+            <div class="char-legend-name">Regular Patient</div>
+            <div class="char-legend-desc">Queued by arrival order<br>easily bumped back</div>
+          </div>
+
+          <div class="char-legend-item">
+            <div class="char-legend-sprite" style="background-image:url('assets/char_emergency.png');background-position:0px -640px;"></div>
+            <div class="char-legend-name">🚑 Emergency</div>
+            <div class="char-legend-desc">Highest priority<br>jumps straight to the front</div>
+          </div>
+
+          <div class="char-legend-item">
+            <div class="char-legend-sprite" style="background-image:url('assets/char_elderly.png');background-position:0px -640px;"></div>
+            <div class="char-legend-name">👴 Elderly Patient</div>
+            <div class="char-legend-desc">Lower priority than emergency<br>still bumps regular patients</div>
+          </div>
+
+          <div class="char-legend-divider"></div>
+
+          <div class="char-legend-item char-legend-item--badge">
+            <div class="char-legend-badge-row">
+              <span class="badge-siren">🚨</span>
+            </div>
+            <div class="char-legend-name">Emergency Badge</div>
+            <div class="char-legend-desc">Marks an emergency patient</div>
+          </div>
+
+          <div class="char-legend-item char-legend-item--badge">
+            <div class="char-legend-badge-row">
+              <span class="badge-missed" style="font-size:12px;background:#e27a47;color:#fff;border-radius:3px;padding:2px 5px;">No-show</span>
+            </div>
+            <div class="char-legend-name">No-show Patient</div>
+            <div class="char-legend-desc">Late re-check-in<br>lower queue priority</div>
+          </div>
+
+          <div class="char-legend-item char-legend-item--badge">
+            <div class="char-legend-badge-row">
+              <span class="badge-rescue" style="font-size:18px;">⚠️</span>
+            </div>
+            <div class="char-legend-name">Rescue Badge</div>
+            <div class="char-legend-desc">Waiting too long, rescue incoming<br>(Hybrid algorithm)</div>
+          </div>
+
+
+        </div>
+      </div>
+
+    </div>
+  </section>
+</main>
+<div id="toastRoot"></div>
+
+<script>
+/* ════════════════════════════════════════
+   CONSTANTS
+════════════════════════════════════════ */
+const PATIENT_TYPES = {
+  NORMAL:    { type:'general',   label:'General', icon:'🧑‍💼', className:'type-normal',    is_elderly_disabled:0, is_emergency:0 },
+  ELDERLY:   { type:'elderly',   label:'Elderly', icon:'👴',   className:'type-elderly',   is_elderly_disabled:1, is_emergency:0 },
+  EMERGENCY: { type:'emergency', label:'Emergency', icon:'🚑',   className:'type-emergency', is_elderly_disabled:0, is_emergency:1 },
+};
+
+const INITIAL_SCHEDULE = [
+  {ticketNumber:1,  label:'A', typeKey:'NORMAL',    estimated_time:12, scheduled_arrival:0,  note:'1st patient, long consult (causes FCFS convoy effect)'},
+  {ticketNumber:2,  label:'B', typeKey:'NORMAL',    estimated_time:10, scheduled_arrival:35, note:'Low ticket no., arrives late → no-show'},
+  {ticketNumber:3,  label:'C', typeKey:'NORMAL',    estimated_time:3,  scheduled_arrival:36, note:'Short consult but arrives late → no-show'},
+  {ticketNumber:4,  label:'D', typeKey:'EMERGENCY', estimated_time:10, scheduled_arrival:4,  note:'Emergency (Priority: constant queue-jumping)'},
+  {ticketNumber:5,  label:'E', typeKey:'NORMAL',    estimated_time:4,  scheduled_arrival:5,  note:'Short consult'},
+  {ticketNumber:6,  label:'F', typeKey:'ELDERLY',   estimated_time:8,  scheduled_arrival:40, note:'Elderly but arrives late → no-show'},
+  {ticketNumber:7,  label:'G', typeKey:'NORMAL',    estimated_time:3,  scheduled_arrival:8,  note:'Short consult'},
+  {ticketNumber:8,  label:'H', typeKey:'NORMAL',    estimated_time:4,  scheduled_arrival:43, note:'Intentionally late → no-show (tests penalty)'},
+  {ticketNumber:9,  label:'I', typeKey:'EMERGENCY', estimated_time:9,  scheduled_arrival:9,  note:'Emergency'},
+  {ticketNumber:10, label:'J', typeKey:'NORMAL',    estimated_time:5,  scheduled_arrival:10, note:'Short consult, borderline'},
+  {ticketNumber:11, label:'K', typeKey:'ELDERLY',   estimated_time:12, scheduled_arrival:11, note:'Elderly, long consult'},
+  {ticketNumber:12, label:'L', typeKey:'NORMAL',    estimated_time:4,  scheduled_arrival:12, note:'Short consult'},
+  {ticketNumber:13, label:'M', typeKey:'NORMAL',    estimated_time:14, scheduled_arrival:13, note:'Long consult, easily bumped'},
+  {ticketNumber:14, label:'N', typeKey:'EMERGENCY', estimated_time:8,  scheduled_arrival:14, note:'Emergency'},
+  {ticketNumber:15, label:'O', typeKey:'NORMAL',    estimated_time:3,  scheduled_arrival:15, note:'Short consult'},
+  {ticketNumber:16, label:'P', typeKey:'ELDERLY',   estimated_time:9,  scheduled_arrival:16, note:'Elderly'},
+  {ticketNumber:17, label:'Q', typeKey:'NORMAL',    estimated_time:4,  scheduled_arrival:17, note:'Short consult'},
+  {ticketNumber:18, label:'R', typeKey:'NORMAL',    estimated_time:6,  scheduled_arrival:18, note:'Medium consult'},
+  {ticketNumber:19, label:'S', typeKey:'EMERGENCY', estimated_time:7,  scheduled_arrival:19, note:'Emergency'},
+  {ticketNumber:20, label:'T', typeKey:'NORMAL',    estimated_time:3,  scheduled_arrival:20, note:'Last patient, short consult'},
+];
+
+const RESCUE_SKIPPED_THRESHOLD     = 3;
+const RESCUE_WAIT_THRESHOLD        = 18;
+const STARVATION_WAIT_THRESHOLD    = 25;
+const STARVATION_SKIPPED_THRESHOLD = 5;
+
+const LANE_INFO = [
+  {mode:'FCFS',    title:'1. FCFS (Traditional)',             desc:'Strict ticket order. Short consults blocked by long ones (convoy effect).',           color:'#c4c090'},
+  {mode:'SJF',     title:'2. SJF (Shortest Job First)',           desc:'Short consults always jump ahead — long consults starve.',                    color:'#8fa9ea'},
+  {mode:'PRIORITY',title:'3. Priority (Weighted)',     desc:'Emergencies constantly jump the queue — regulars wait forever.',                  color:'#e27a47'},
+  {mode:'HYBRID',  title:'🌟 4. Hybrid (Safety Net)', desc:'Early rescue (⚠️) prevents starvation (🗿) + strict no-show penalty',          color:'#818251'},
+];
+
+const SPEED_MAP    = {1:1200,2:700,3:400,4:200,5:80};
+const SPEED_LABELS = {1:'Very Slow',2:'Slow',3:'Normal',4:'Fast',5:'Turbo'};
+
+/* ════════════════════════════════════════
+   SOUND EFFECTS  (Web Audio API, no external files)
+════════════════════════════════════════ */
+const _sfx = (() => {
+  try { return new (window.AudioContext || window.webkitAudioContext)(); } catch(e) { return null; }
+})();
+
+function _tone(freq, dur, vol=0.13, type='sine', startDelay=0) {
+  if (!_sfx) return;
+  const osc  = _sfx.createOscillator();
+  const gain = _sfx.createGain();
+  osc.connect(gain); gain.connect(_sfx.destination);
+  osc.type = type;
+  const t0 = _sfx.currentTime + startDelay;
+  osc.frequency.setValueAtTime(freq, t0);
+  gain.gain.setValueAtTime(vol, t0);
+  gain.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+  osc.start(t0); osc.stop(t0 + dur + 0.02);
+}
+
+// ding — new patient takes seat
+function sfxArrive() { _tone(880, 0.10, 0.11); }
+
+// swoosh — bumped back by higher-priority patient (debounced 200ms)
+let _bumpDebounce = 0;
+function sfxBump() {
+  const now = Date.now();
+  if (now - _bumpDebounce < 200) return;
+  _bumpDebounce = now;
+  if (!_sfx) return;
+  const osc  = _sfx.createOscillator();
+  const gain = _sfx.createGain();
+  osc.connect(gain); gain.connect(_sfx.destination);
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(420, _sfx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(180, _sfx.currentTime + 0.20);
+  gain.gain.setValueAtTime(0.10, _sfx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, _sfx.currentTime + 0.20);
+  osc.start(_sfx.currentTime); osc.stop(_sfx.currentTime + 0.22);
+}
+
+// ding-dong — consultation complete
+function sfxComplete() {
+  _tone(523, 0.12, 0.13);        // C5
+  _tone(659, 0.18, 0.13, 'sine', 0.14); // E5
+}
+
+/* ════════════════════════════════════════
+   SCENE GEOMETRY (pixels, anchor = feet-center)
+════════════════════════════════════════ */
+const SC_W = 820, SC_H = 450;
+const SC_ENTRANCE   = {x:40,  y:410};
+// Single row, 12 seats. Seat 0 = rightmost (closest to room, served first).
+// Patients queue right→left; forward fill moves RIGHT, bump-back moves LEFT.
+const SC_SEATS = [
+  {x:600,y:330},{x:552,y:330},{x:504,y:330},{x:456,y:330},
+  {x:408,y:330},{x:360,y:330},{x:312,y:330},{x:264,y:330},
+  {x:216,y:330},{x:168,y:330},{x:120,y:330},{x:72,y:330}
+];
+// Room: far right, compressed to 190px wide
+// Door gap: room-relative x 75→140 → scene center ≈ 730
+const SC_ROOM_BOX   = {x:625, y:15, w:190, h:270};
+const SC_ROOM_WALL  = 10;          // wall thickness px
+const SC_DOOR_L     = 75;          // door gap left edge (room-relative)
+const SC_DOOR_R     = 140;         // door gap right edge (room-relative)
+const SC_ROOM_DOOR  = {x:732, y:287};   // feet position at door gap
+const SC_IN_ROOM    = {x:695, y:160};   // target for walking-to-room anim
+const SC_EXIT       = {x:732, y:28};    // exit: walks up through top of room
+
+/* ════════════════════════════════════════
+   STATE
+════════════════════════════════════════ */
+const initialAlgoState = () => ({queue:[],active:null,completed:[],served_history:[],starvationCount:0});
+
+let tick               = 0;
+let arrivedIds         = new Set();
+let isAutoPlaying      = false;
+let autoPlayTimer      = null;
+let globalMaxCalledTicket = 0;
+let toastTimer         = null;
+let autoSpeed          = 3;
+let algos              = getInitialAlgos();
+let logEntries         = [];
+let activeTab          = 'FCFS';
+
+// Scheduling animation tracking (kept for log triggers)
+let prevActiveIds    = {FCFS:null,  SJF:null,  PRIORITY:null,  HYBRID:null};
+let prevStarvation   = {FCFS:0,     SJF:0,     PRIORITY:0,     HYBRID:0};
+let prevCompleted    = {FCFS:0,     SJF:0,     PRIORITY:0,     HYBRID:0};
+let lastEmergencyTick= {FCFS:-99,   SJF:-99,   PRIORITY:-99,   HYBRID:-99};
+let lastMissedTick   = {FCFS:-99,   SJF:-99,   PRIORITY:-99,   HYBRID:-99};
+
+// Scene character tracking
+// seatAssignments[mode][pid] = seatIndex (0-7)
+let seatAssignments  = {FCFS:{}, SJF:{}, PRIORITY:{}, HYBRID:{}};
+// exitingSet[mode] = Set of pids currently doing exit walk
+let exitingSet       = {FCFS:new Set(), SJF:new Set(), PRIORITY:new Set(), HYBRID:new Set()};
+// prevActivePid[mode] = last tick's active pid (to detect transition to room)
+let prevActivePid    = {FCFS:null, SJF:null, PRIORITY:null, HYBRID:null};
+// roomShowPatientAt[mode] = Date.now() timestamp after which room may show active patient
+let roomShowPatientAt = {FCFS:0, SJF:0, PRIORITY:0, HYBRID:0};
+// knownCompletedPids[mode] = Set of completed pids we've already triggered exit for
+let knownCompletedPids = {FCFS:new Set(), SJF:new Set(), PRIORITY:new Set(), HYBRID:new Set()};
+
+function getInitialAlgos() {
+  return {FCFS:initialAlgoState(),SJF:initialAlgoState(),PRIORITY:initialAlgoState(),HYBRID:initialAlgoState()};
+}
+
+/* ════════════════════════════════════════
+   WALK SPEED HELPER
+════════════════════════════════════════ */
+function getWalkParams(p) {
+  // Uniform speed for all patients so queue shuffles look clean and consistent
+  return { duration: 1400, cycle: '0.72s' };
+}
+
+/* ════════════════════════════════════════
+   MOOD HELPER  (emoji only)
+════════════════════════════════════════ */
+function getPatientMood(p) {
+  if (p.is_missed_call)             return {text:'😅',    cls:'mood-mild'};
+  const w = p.waiting_time;
+  if (p.has_been_starved || w > 25) return {text:'👻',    cls:'mood-gone'};
+  if (w > 18)                       return {text:'😑',    cls:'mood-existential'};
+  if (w > 10)                       return {text:'💢',    cls:'mood-annoyed'};
+  if (w > 5)                        return {text:'😐🚽',  cls:'mood-mild'};
+  return                                   {text:'😊',    cls:'mood-ok'};
+}
+
+/* ════════════════════════════════════════
+   CORE SCHEDULING LOGIC (UNCHANGED)
+════════════════════════════════════════ */
+function processLane(mode, state, newPatient=null, tickAdvance=false, currentGlobalMaxTicket=0) {
+  let queue          = state.queue.map(p=>({...p}));
+  let active         = state.active?{...state.active}:null;
+  let completed      = state.completed.map(p=>({...p}));
+  let served_history = state.served_history.map(p=>({...p}));
+  let starvationCount= state.starvationCount;
+
+  if (newPatient) {
+    const isMissed = newPatient.ticketNumber < currentGlobalMaxTicket ? 1 : 0;
+    queue.push({
+      ...newPatient,
+      is_missed_call:isMissed, missed_count:isMissed, skipped_count:0,
+      has_been_starved:false, needs_rescue:false, queue_rank:0,
+      starvation_bonus:0, current_score:0, status:'waiting',
+    });
+  }
+
+  if (tickAdvance) {
+    queue = queue.map(p=>({...p, waiting_time:p.waiting_time+1}));
+    queue = queue.map(p=>{
+      const isOnTime        = p.missed_count===0;
+      const rescueEligible  = p.skipped_count>=RESCUE_SKIPPED_THRESHOLD||p.waiting_time>=RESCUE_WAIT_THRESHOLD;
+      const needsRescue     = mode==='HYBRID'&&isOnTime&&rescueEligible;
+      const isSystemStarved = isOnTime&&!needsRescue
+        &&(p.waiting_time>=STARVATION_WAIT_THRESHOLD||p.skipped_count>=STARVATION_SKIPPED_THRESHOLD);
+      if (isSystemStarved&&!p.has_been_starved) starvationCount+=1;
+      return {...p, needs_rescue:needsRescue, has_been_starved:p.has_been_starved||isSystemStarved};
+    });
+    if (active) {
+      active.remaining_time-=1;
+      if (active.remaining_time<=0){completed.push(active);served_history.push(active);active=null;}
+    }
+  }
+
+  if (!active&&queue.length>0) {
+    const queueRankMap = new Map(
+      [...queue].sort((a,b)=>a.ticketNumber-b.ticketNumber).map((p,i)=>[p.ticketNumber,i])
+    );
+    queue = queue.map(p=>({
+      ...p,
+      queue_rank: queueRankMap.get(p.ticketNumber)??0,
+      starvation_bonus: p.missed_count===0
+        &&(p.skipped_count>=RESCUE_SKIPPED_THRESHOLD||p.waiting_time>=RESCUE_WAIT_THRESHOLD)?80:0,
+    }));
+
+    queue.sort((a,b)=>{
+      if (mode==='FCFS') return a.ticketNumber-b.ticketNumber;
+      if (mode==='SJF') {
+        if (a.estimated_time===b.estimated_time) return a.ticketNumber-b.ticketNumber;
+        return a.estimated_time-b.estimated_time;
+      }
+      if (mode==='PRIORITY') {
+        const sA=(a.is_elderly_disabled*6)+(a.is_emergency*30)-(a.missed_count*5);
+        const sB=(b.is_elderly_disabled*6)+(b.is_emergency*30)-(b.missed_count*5);
+        if (sA===sB) return a.ticketNumber-b.ticketNumber;
+        return sB-sA;
+      }
+      if (mode==='HYBRID') {
+        const calc=p=>(p.waiting_time*.5)-(p.estimated_time*.2)-(p.queue_rank*1.0)
+          +(p.is_short_visit*6)+(p.is_elderly_disabled*6)+(p.is_emergency*30)
+          -(p.missed_count*10)+p.starvation_bonus;
+        a.current_score=calc(a).toFixed(1);
+        b.current_score=calc(b).toFixed(1);
+        if (a.current_score===b.current_score) return a.ticketNumber-b.ticketNumber;
+        return parseFloat(b.current_score)-parseFloat(a.current_score);
+      }
+      return 0;
+    });
+
+    let selectedIndex=0;
+    if (mode==='HYBRID') {
+      const recent5=served_history.slice(-5);
+      let consecutiveShort=0;
+      for (let i=served_history.length-1;i>=0;i--){
+        if (served_history[i].is_short_visit) consecutiveShort++; else break;
+      }
+      let foundValid=false;
+      for (let i=0;i<queue.length;i++){
+        const c=queue[i];
+        const missedIn5=recent5.filter(p=>p.missed_count>0).length+(c.missed_count>0?1:0);
+        const elderlyIn5=recent5.filter(p=>p.is_elderly_disabled===1).length+(c.is_elderly_disabled===1?1:0);
+        if (!(missedIn5>1)&&!(elderlyIn5>2)&&!(c.is_short_visit&&consecutiveShort>=2)){
+          selectedIndex=i;foundValid=true;break;
+        }
+      }
+      if (!foundValid) selectedIndex=queue.reduce((mi,p,i)=>p.waiting_time>queue[mi].waiting_time?i:mi,0);
+    }
+
+    active=queue.splice(selectedIndex,1)[0];
+    queue=queue.map(p=>p.ticketNumber<active.ticketNumber?{...p,skipped_count:p.skipped_count+1}:p);
+  }
+
+  return {queue,active,completed,served_history,starvationCount};
+}
+
+/* ════════════════════════════════════════
+   TOAST
+════════════════════════════════════════ */
+function escapeHtml(v){
+  return String(v).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
+}
+function showToast(patient,isMissed){
+  const t=PATIENT_TYPES[patient.typeKey];
+  document.getElementById('toastRoot').innerHTML=`
+    <div class="toast"><div class="toast-card ${isMissed?'toast-missed':'toast-ok'}">
+      <div class="toast-icon">${t.icon}</div>
+      <div class="toast-title">${escapeHtml(patient.label)} checked in!</div>
+      <div class="toast-sub">${isMissed?'🚨 Missed slot — marked as no-show':'✅ On time — joining the queue'}</div>
+    </div></div>`;
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>{document.getElementById('toastRoot').innerHTML='';},2500);
+}
+
+/* ════════════════════════════════════════
+   LOG
+════════════════════════════════════════ */
+function addLog(msg,cls){
+  logEntries.unshift({tick,msg,cls});
+  if(logEntries.length>80) logEntries.length=80;
+}
+function renderLog(){
+  document.getElementById('logCount').textContent=`${logEntries.length} entries`;
+  document.getElementById('logBody').innerHTML=logEntries.map(e=>
+    `<div class="log-entry"><span class="log-tick">[${e.tick}]</span><span class="log-msg ${e.cls}">${e.msg}</span></div>`
+  ).join('');
+}
+
+/* ════════════════════════════════════════
+   ARRIVAL HANDLING (UNCHANGED)
+════════════════════════════════════════ */
+function handleArrivalsAtTick(targetTick,currentArrivedIds,currentAlgos,manualPatient=null){
+  const arrivals = manualPatient
+    ?[manualPatient]
+    :INITIAL_SCHEDULE.filter(p=>p.scheduled_arrival===targetTick&&!currentArrivedIds.has(p.ticketNumber));
+  if (!arrivals.length) return{newArrived:currentArrivedIds,newAlgos:currentAlgos};
+
+  const newArrived=new Set(currentArrivedIds);
+  arrivals.forEach(p=>newArrived.add(p.ticketNumber));
+  let nextAlgos={};
+  const maxTickSoFar=globalMaxCalledTicket;
+
+  arrivals.forEach(pd=>{
+    const isMissed=pd.ticketNumber<maxTickSoFar;
+    if (manualPatient) showToast(pd,isMissed);
+    const info=PATIENT_TYPES[pd.typeKey];
+    if (isMissed) {
+      addLog(`🏃 No.${pd.ticketNumber} ${pd.label} returned (no-show) — everyone upset`,'log-starvation');
+      Object.keys(algos).forEach(m=>{ lastMissedTick[m]=targetTick; });
+    } else {
+      addLog(`${info.icon} No.${pd.ticketNumber} ${pd.label} checked in ✅ joining queue`,'log-arrival');
+    }
+    const np={
+      ticketNumber:pd.ticketNumber, type:info.type, label:pd.label, icon:info.icon,
+      className:info.className, estimated_time:pd.estimated_time, remaining_time:pd.estimated_time,
+      arrival_time:targetTick, waiting_time:0, is_short_visit:pd.estimated_time<=5?1:0,
+      is_elderly_disabled:info.is_elderly_disabled, is_emergency:info.is_emergency,
+    };
+    Object.keys(currentAlgos).forEach(mode=>{
+      nextAlgos[mode]=processLane(mode,nextAlgos[mode]||currentAlgos[mode],np,false,maxTickSoFar);
+    });
+  });
+  arrivedIds=newArrived; algos=nextAlgos;
+  return{newArrived,newAlgos:nextAlgos};
+}
+
+/* ════════════════════════════════════════
+   TICK / AUTO PLAY
+════════════════════════════════════════ */
+function advanceTick(){
+  tick+=1;
+  let nextAlgos={};
+  let newMaxCalled=globalMaxCalledTicket;
+
+  Object.keys(algos).forEach(mode=>{
+    const prev=algos[mode];
+    nextAlgos[mode]=processLane(mode,prev,null,true,globalMaxCalledTicket);
+    if (mode==='FCFS'&&nextAlgos[mode].active)
+      newMaxCalled=Math.max(newMaxCalled,nextAlgos[mode].active.ticketNumber);
+
+    if (prev.active&&nextAlgos[mode].completed.length>prev.completed.length)
+      if (mode==='FCFS') addLog(`✅ [${mode}] No.${prev.active.ticketNumber} ${prev.active.label} consultation done 🎉`,'log-complete');
+
+    if (nextAlgos[mode].starvationCount>prevStarvation[mode])
+      addLog(`🗿 [${mode}] starvation event — a patient has been waiting too long!`,'log-starvation');
+    prevStarvation[mode]=nextAlgos[mode].starvationCount;
+
+    if (nextAlgos[mode].active&&nextAlgos[mode].active.ticketNumber!==prevActiveIds[mode]
+        &&nextAlgos[mode].active.is_emergency) {
+      addLog(`🚑 [${mode}] No.${nextAlgos[mode].active.ticketNumber} emergency rushed into the exam room!`,'log-rescue');
+      lastEmergencyTick[mode]=tick;
+    }
+  });
+
+  globalMaxCalledTicket=newMaxCalled;
+  const result=handleArrivalsAtTick(tick,arrivedIds,nextAlgos);
+  algos=result.newAlgos;
+  render();
+}
+
+function triggerAutoSimulate(){
+  if(isAutoPlaying) return;
+  isAutoPlaying=true;
+  autoPlayTimer=setInterval(advanceTick,SPEED_MAP[autoSpeed]||400);
+  render();
+}
+function stopAutoSimulate(){
+  if(autoPlayTimer) clearInterval(autoPlayTimer);
+  autoPlayTimer=null; isAutoPlaying=false; render();
+}
+function resetSystem(){
+  stopAutoSimulate();
+  tick=0; globalMaxCalledTicket=0; arrivedIds=new Set();
+  algos=getInitialAlgos(); logEntries=[];
+  prevActiveIds={FCFS:null,SJF:null,PRIORITY:null,HYBRID:null};
+  prevStarvation={FCFS:0,SJF:0,PRIORITY:0,HYBRID:0};
+  prevCompleted={FCFS:0,SJF:0,PRIORITY:0,HYBRID:0};
+  lastEmergencyTick={FCFS:-99,SJF:-99,PRIORITY:-99,HYBRID:-99};
+  lastMissedTick={FCFS:-99,SJF:-99,PRIORITY:-99,HYBRID:-99};
+  // Reset scene state
+  seatAssignments={FCFS:{},SJF:{},PRIORITY:{},HYBRID:{}};
+  exitingSet={FCFS:new Set(),SJF:new Set(),PRIORITY:new Set(),HYBRID:new Set()};
+  prevActivePid={FCFS:null,SJF:null,PRIORITY:null,HYBRID:null};
+  roomShowPatientAt={FCFS:0,SJF:0,PRIORITY:0,HYBRID:0};
+  knownCompletedPids={FCFS:new Set(),SJF:new Set(),PRIORITY:new Set(),HYBRID:new Set()};
+  // Clear all character layers
+  LANE_INFO.forEach(info=>{
+    const layer=document.getElementById(`chars-${info.mode}`);
+    if(layer) layer.innerHTML='';
+  });
+  handleArrivalsAtTick(0,new Set(),algos);
+  render();
+}
+function manualArrive(ticketNumber){
+  if(isAutoPlaying||arrivedIds.has(ticketNumber)) return;
+  const p=INITIAL_SCHEDULE.find(p=>p.ticketNumber===ticketNumber);
+  if(!p) return;
+  handleArrivalsAtTick(tick,arrivedIds,algos,p);
+  render();
+}
+
+/* ════════════════════════════════════════
+   ARRIVAL LIST (UNCHANGED)
+════════════════════════════════════════ */
+function renderArrivalList(){
+  return INITIAL_SCHEDULE.map(p=>{
+    const isArrived=arrivedIds.has(p.ticketNumber);
+    const ti=PATIENT_TYPES[p.typeKey];
+    return `<button class="arrival-card ${ti.className} ${isArrived?'arrived':''} ${isAutoPlaying?'locked':''}"
+      data-ticket="${p.ticketNumber}" ${isArrived||isAutoPlaying?'disabled':''}>
+      <div class="arrival-main">
+        <div class="arrival-icon">${ti.icon}</div>
+        <div>
+          <div class="arrival-title">No.${p.ticketNumber} ${escapeHtml(p.label)}</div>
+          <div class="arrival-note">${escapeHtml(p.note)}</div>
+        </div>
+      </div>
+      <div class="arrival-time">${!isArrived
+        ?`Expected Tick: ${p.scheduled_arrival}<div class="arrival-click">Click to check in 👆</div>`
+        :'Checked in'}</div>
+    </button>`;
+  }).join('');
+}
+
+/* ════════════════════════════════════════
+   SCENE: SPRITE URL
+════════════════════════════════════════ */
+function charSpriteUrl(p) {
+  if (p.is_emergency)        return 'assets/char_emergency.png';
+  if (p.is_elderly_disabled) return 'assets/char_elderly.png';
+  return 'assets/char_normal.png';
+}
+
+/* ════════════════════════════════════════
+   SCENE: ASSIGN / FREE SEATS
+════════════════════════════════════════ */
+// Order-based seat: seat index = position in visQ (0-7).
+// Returns the seat index, or -1 if overflow.
+function assignSeat(mode, pid, queueIdx) {
+  if (queueIdx < 0 || queueIdx >= SC_SEATS.length) return -1;
+  seatAssignments[mode][pid] = queueIdx;
+  return queueIdx;
+}
+function freeSeat(mode, pid) {
+  delete seatAssignments[mode][pid];
+}
+
+/* ════════════════════════════════════════
+   SCENE: BUILD STATIC HTML (called once per mode)
+════════════════════════════════════════ */
+function mk(tag, cls, css) {
+  const el = document.createElement(tag||'div');
+  if (cls) el.className = cls;
+  if (css) el.style.cssText = css;
+  return el;
+}
+
+function buildSceneViewport(mode) {
+  const vp = document.getElementById(`viewport-${mode}`);
+  if (!vp || vp.dataset.built) return;
+  vp.dataset.built = '1';
+
+  const {x:rx, y:ry, w:rw, h:rh} = SC_ROOM_BOX;
+  const wt = SC_ROOM_WALL; // wall thickness
+  const dL = SC_DOOR_L, dR = SC_DOOR_R; // door gap within room
+  const signH = 14; // room sign bar height
+
+  /* ── Waiting zone bg ── */
+  vp.appendChild(mk('div','scene-zone-wait','left:115px;top:145px;width:290px;height:215px;'));
+  const wzL = mk('div','scene-zone-label','left:122px;top:148px;');
+  wzL.textContent = 'Waiting Area';
+  vp.appendChild(wzL);
+
+  /* ── CSS Bench (single long row) ── */
+  // Back-rest at top=298, seat surface at top=310; spans full waiting area width
+  vp.appendChild(mk('div','scene-bench-back','left:47px;top:298px;width:578px;height:13px;'));
+  vp.appendChild(mk('div','scene-bench-seat','left:47px;top:311px;width:578px;height:18px;'));
+
+  /* ── Entrance marker ── */
+  const ent = mk('div','scene-door-marker',`left:${SC_ENTRANCE.x-20}px;top:${SC_ENTRANCE.y-64}px;`);
+  ent.innerHTML = '<div class="scene-door-emoji">🚪</div><div class="scene-label-sm">Entrance</div>';
+  vp.appendChild(ent);
+
+  /* ── Exit label ── */
+  const exitEl = mk('div','scene-label-sm',`position:absolute;left:${SC_EXIT.x-20}px;top:${SC_EXIT.y+2}px;`);
+  exitEl.textContent = '→ Exit';
+  vp.appendChild(exitEl);
+
+  /* ── Doctor room: floor ── */
+  vp.appendChild(mk('div','room-floor',`left:${rx}px;top:${ry}px;width:${rw}px;height:${rh}px;`));
+
+  /* ── Doctor room: walls ── */
+  // Top wall (includes sign bar)
+  const topWall = mk('div','room-wall',`left:${rx}px;top:${ry}px;width:${rw}px;height:${wt+signH}px;`);
+  vp.appendChild(topWall);
+  // Sign text on top wall
+  const sign = mk('div','room-wall-sign',`left:${rx}px;top:${ry}px;width:${rw}px;height:${wt+signH}px;`);
+  sign.textContent = '👨‍⚕️ Exam Room';
+  vp.appendChild(sign);
+  // Left wall
+  vp.appendChild(mk('div','room-wall',`left:${rx}px;top:${ry}px;width:${wt}px;height:${rh}px;`));
+  // Right wall
+  vp.appendChild(mk('div','room-wall',`left:${rx+rw-wt}px;top:${ry}px;width:${wt}px;height:${rh}px;`));
+  // Bottom wall — left piece (0 → dL)
+  vp.appendChild(mk('div','room-wall',`left:${rx}px;top:${ry+rh-wt}px;width:${dL}px;height:${wt}px;`));
+  // Bottom wall — right piece (dR → rw)
+  vp.appendChild(mk('div','room-wall',`left:${rx+dR}px;top:${ry+rh-wt}px;width:${rw-dR}px;height:${wt}px;`));
+  // Door pillars (small dark posts at door edges)
+  vp.appendChild(mk('div','room-wall',`left:${rx+dL-4}px;top:${ry+rh-wt-10}px;width:6px;height:${wt+10}px;background:#2a4a2a;`));
+  vp.appendChild(mk('div','room-wall',`left:${rx+dR-2}px;top:${ry+rh-wt-10}px;width:6px;height:${wt+10}px;background:#2a4a2a;`));
+
+  /* ── Room inner area (doctor + desk + patient, managed by updateRoomDisplay) ── */
+  const innerCss = `left:${rx+wt}px;top:${ry+wt+signH}px;width:${rw-wt*2}px;height:${rh-wt*2-signH}px;`;
+  const inner = mk('div','scene-room-inner',innerCss);
+  inner.id = `room-inner-${mode}`;
+  vp.appendChild(inner);
+
+  /* ── Room emergency flash overlay ── */
+  const flash = mk('div','room-flash-overlay',`left:${rx}px;top:${ry}px;width:${rw}px;height:${rh}px;`);
+  flash.id = `room-${mode}`;
+  vp.appendChild(flash);
+
+  /* ── Overflow badge ── */
+  const ov = mk('div','scene-overflow','left:425px;top:185px;');
+  ov.id = `overflow-${mode}`;
+  vp.appendChild(ov);
+
+  /* ── Characters layer (always on top) ── */
+  const cl = mk('div',null,'position:absolute;inset:0;pointer-events:none;z-index:20;');
+  cl.id = `chars-${mode}`;
+  vp.appendChild(cl);
+}
+
+/* ════════════════════════════════════════
+   SCENE: CREATE CHARACTER ELEMENT
+════════════════════════════════════════ */
+function createCharEl(p) {
+  const div = document.createElement('div');
+  div.dataset.pid = p.ticketNumber;
+  div.className = 'scene-char no-transition';
+  div.style.left = (SC_ENTRANCE.x - 32) + 'px';
+  div.style.top  = (SC_ENTRANCE.y - 64) + 'px';
+  div.style.opacity = '1'; // visible immediately so walk-in can be seen
+  div.innerHTML = buildCharInner(p, false, false, false);
+  return div;
+}
+
+function buildCharInner(p, isActive, showAnger, isExiting) {
+  const spriteClass = p.has_been_starved ? 'char-starved'
+                    : p.needs_rescue     ? 'char-rescue'
+                    : p.is_missed_call   ? 'char-missed' : '';
+  const imgUrl = charSpriteUrl(p);
+
+  // Badges
+  let badges = '';
+  if (p.is_emergency) badges += '<span class="badge-siren">🚨</span>';
+  if (p.needs_rescue) badges += '<span class="badge-rescue">⚠️</span>';
+  if (showAnger && !p.is_emergency && !p.is_missed_call) badges += '<span class="badge-anger">💢</span>';
+  if (p.is_missed_call) badges += '<span class="badge-missed">No-show</span>';
+  if (p.is_short_visit && !p.is_missed_call) badges += '<span class="badge-short">Short</span>';
+
+  const mood = isActive  ? {text:'✍️',  cls:'mood-seeing'}
+             : isExiting ? {text:'✅',  cls:'mood-ok'}
+             : getPatientMood(p);
+
+  return `
+    <div class="char-bubble ${mood.cls}">${mood.text}</div>
+    <div style="position:relative">
+      <div class="char-badges">${badges}</div>
+      <div class="char-sprite char-idle ${spriteClass}"
+           style="background-image:url('${imgUrl}')"></div>
+    </div>
+    <div class="char-nameplate">No.${p.ticketNumber}</div>`;
+}
+
+/* ════════════════════════════════════════
+   SCENE: SET WALK / IDLE ANIMATION
+════════════════════════════════════════ */
+function setSpriteAnim(el, dir, cycleDuration) {
+  const sprite = el.querySelector('.char-sprite');
+  if (!sprite) return;
+  sprite.classList.remove('char-walk-right','char-walk-left','char-walk-up','char-walk-down','char-idle');
+  if (!dir || dir === 'idle') { sprite.classList.add('char-idle'); return; }
+  sprite.classList.add(`char-walk-${dir}`);
+  // Override animation speed for elderly/emergency
+  sprite.style.animationDuration = cycleDuration || '0.72s';
+}
+
+/* moveCharTo: pass patient p so walk speed reflects character type */
+function moveCharTo(el, x, y, dir, p) {
+  const { duration, cycle } = getWalkParams(p);
+  el.classList.remove('no-transition');
+  el.style.transition = `left ${duration}ms linear, top ${duration}ms linear, opacity .4s ease`;
+  el.style.left = (x - 32) + 'px';
+  el.style.top  = (y - 64) + 'px';
+  setSpriteAnim(el, dir, cycle);
+  setTimeout(() => setSpriteAnim(el, 'idle'), duration + 60);
+  return duration; // caller may want to chain on this
+}
+
+/* ════════════════════════════════════════
+   SCENE: UPDATE CHARACTERS FOR ONE MODE
+   Design: overlay scene-chars handle QUEUE patients only.
+   Active patient is shown inside the room box via updateRoomDisplay().
+   When a patient transitions queue→active, their overlay char walks to
+   the room door then fades. When they complete, a temp char walks to exit.
+════════════════════════════════════════ */
+function updateSceneChars(mode) {
+  const charsLayer = document.getElementById(`chars-${mode}`);
+  if (!charsLayer) return;
+
+  const state    = algos[mode];
+  const allAngry = (tick - lastMissedTick[mode]) < 3;
+  const MAX_VIS  = 12;
+  const visQ     = state.queue.slice(0, MAX_VIS);
+  const hiddenCnt= state.queue.length - MAX_VIS;
+
+  // ── Overflow badge ──
+  const ovEl = document.getElementById(`overflow-${mode}`);
+  if (ovEl) {
+    ovEl.style.display = hiddenCnt > 0 ? 'block' : 'none';
+    if (hiddenCnt > 0) ovEl.textContent = `+${hiddenCnt}\nwaiting`;
+  }
+
+  // ── Detect newly completed → spawn exit-walk char ──
+  state.completed.forEach(p => {
+    const pid = p.ticketNumber;
+    if (!knownCompletedPids[mode].has(pid)) {
+      knownCompletedPids[mode].add(pid);
+      freeSeat(mode, pid);
+
+      // Spawn temp char at room door, walk to exit
+      const exitEl = createCharEl(p);
+      exitEl.dataset.exitchar = '1';
+      exitEl.classList.add('no-transition');
+      // Spawn inside the room (SC_IN_ROOM) so the exit walk never crosses
+      // the incoming patient who is walking toward SC_ROOM_DOOR.
+      exitEl.style.left = (SC_IN_ROOM.x - 32) + 'px';
+      exitEl.style.top  = (SC_IN_ROOM.y - 64) + 'px';
+      exitEl.innerHTML  = buildCharInner(p, false, false, true);
+      charsLayer.appendChild(exitEl);
+      sfxComplete(); // 🔔 consultation done
+
+      requestAnimationFrame(() => {
+        const dur = moveCharTo(exitEl, SC_EXIT.x, SC_EXIT.y, 'up', p);
+        setTimeout(() => {
+          exitEl.style.transition = 'opacity .5s ease';
+          exitEl.style.opacity    = '0';
+          setTimeout(() => exitEl.remove(), 550);
+        }, dur + 50);
+      });
+    }
+  });
+
+  // visQ pid set (for seat rendering, visible 7 only)
+  const queuePidSet = new Set(visQ.map(p => p.ticketNumber));
+  // Full queue pid set (for walkingToRoom guard — must include overflow patients)
+  const fullQueuePidSet = new Set(state.queue.map(p => p.ticketNumber));
+
+  // ── Detect chars that left the queue (→ room): walk to door + fade ──
+  // Use fullQueuePidSet so overflow patients (pushed past seat 7) are NOT
+  // mistakenly treated as having become active.
+  charsLayer.querySelectorAll('[data-pid]:not([data-exitchar])').forEach(el => {
+    const pid = Number(el.dataset.pid);
+    if (!fullQueuePidSet.has(pid) && !el.dataset.walkingToRoom) {
+      el.dataset.walkingToRoom = '1';
+      delete el.dataset.targetSeat;
+      freeSeat(mode, pid);
+      // Find the patient data from completed or active to get type info
+      const pData = state.active?.ticketNumber === pid ? state.active
+                  : state.completed.find(c => c.ticketNumber === pid);
+      const dur = moveCharTo(el, SC_ROOM_DOOR.x, SC_ROOM_DOOR.y, 'right', pData);
+      // Mark when room may show the patient (walk duration + small buffer)
+      roomShowPatientAt[mode] = Date.now() + dur + 200;
+      setTimeout(() => {
+        el.style.transition = 'opacity .3s ease';
+        el.style.opacity    = '0';
+        setTimeout(() => el.remove(), 350);
+      }, dur + 50);
+    }
+  });
+
+  // ── Edge case: new active patient who was never a queue char ──
+  // (arrived and immediately became active — no DOM element to walk)
+  if (state.active) {
+    const ap = state.active;
+    if (prevActivePid[mode] !== ap.ticketNumber) {
+      // New active patient — start the delay clock if not already set by the walk loop above
+      if (roomShowPatientAt[mode] <= Date.now()) {
+        const { duration } = getWalkParams(ap);
+        roomShowPatientAt[mode] = Date.now() + duration + 200;
+      }
+      prevActivePid[mode] = ap.ticketNumber;
+    }
+  } else {
+    prevActivePid[mode] = null;
+  }
+
+  // ── Queue patients: order-based seat assignment ──
+  // Seat = queue index.
+  //   Forward fill (seat decreases): smooth but quick — plays immediately
+  //   Bumped back  (seat increases): domino stagger — each seat delays 160ms more
+  //     so you see a clear wave of "everyone pushed back one by one"
+  // data-targetSeat = seat this element is visually committed to moving toward.
+  // We only re-schedule an animation when targetSeat changes.
+  const DOMINO_STEP = 160; // ms between each successive bump
+
+  visQ.forEach((p, qIdx) => {
+    const pid = p.ticketNumber;
+
+    // Don't update if mid-walk-to-room
+    const existing = charsLayer.querySelector(`[data-pid="${pid}"]:not([data-exitchar])`);
+    if (existing && existing.dataset.walkingToRoom) return;
+
+    const newSeat = qIdx < SC_SEATS.length ? qIdx : -1;
+    if (newSeat < 0) return; // overflow — hide
+
+    seatAssignments[mode][pid] = newSeat;
+    const target = SC_SEATS[newSeat];
+    let el = existing;
+
+    if (!el) {
+      // New arrival: spawn at entrance, walk to assigned seat
+      el = createCharEl(p);
+      el.dataset.targetSeat = String(newSeat);
+      charsLayer.appendChild(el);
+      sfxArrive(); // 🔔 ding
+      requestAnimationFrame(() => {
+        moveCharTo(el, target.x, target.y, 'right', p);
+      });
+      return;
+    }
+
+    // Refresh inner HTML (mood / badges) while preserving current pixel position
+    const curL = parseInt(el.style.left) || 0;
+    const curT = parseInt(el.style.top)  || 0;
+    el.innerHTML = buildCharInner(p, false, allAngry, false);
+    el.style.left = curL + 'px';
+    el.style.top  = curT + 'px';
+    const sprite = el.querySelector('.char-sprite');
+    if (sprite) sprite.classList.add('char-idle');
+
+    const visualSeat = parseInt(el.dataset.targetSeat);
+    if (!isNaN(visualSeat) && visualSeat === newSeat) return; // already correct
+
+    // Mark as committed so repeated ticks don't re-schedule
+    el.dataset.targetSeat = String(newSeat);
+
+    if (isNaN(visualSeat) || newSeat <= visualSeat) {
+      // ── Forward fill: everyone shifts RIGHT toward room (animated) ──
+      moveCharTo(el, target.x, target.y, 'right', p);
+    } else {
+      // ── Bumped back by higher-priority insertion ──
+      // Wait for forward-fill animation to finish first, then domino stagger left.
+      // FILL_WAIT ≈ walk duration so bump-back plays after the gap is visibly closed.
+      const FILL_WAIT = 1500;
+      const delay = FILL_WAIT + newSeat * DOMINO_STEP;
+      setTimeout(() => {
+        if (!el.isConnected || el.dataset.walkingToRoom) return;
+        sfxBump(); // 🔔 swoosh (debounced)
+        moveCharTo(el, target.x, target.y, 'left', p);
+      }, delay);
+    }
+  });
+
+  // ── Hide overflow chars (beyond MAX_VIS, not walking to room) ──
+  charsLayer.querySelectorAll('[data-pid]:not([data-exitchar])').forEach(el => {
+    const pid = Number(el.dataset.pid);
+    if (!queuePidSet.has(pid) && !el.dataset.walkingToRoom) return; // handled above
+    if (el.dataset.walkingToRoom) return;
+    const idx = visQ.findIndex(p => p.ticketNumber === pid);
+    if (idx < 0) {
+      // Patient is in queue but beyond MAX_VIS: hide element
+      el.style.opacity = '0';
+      el.style.pointerEvents = 'none';
+    } else {
+      el.style.opacity = '';
+      el.style.pointerEvents = '';
+    }
+  });
+
+  // ── Room display (doctor + active patient inside room box) ──
+  updateRoomDisplay(mode);
+}
+
+/* ════════════════════════════════════════
+   SCENE: ROOM INNER — desk layout
+   Visual order (top→bottom):
+     [doctor row]  ← behind desk
+     [desk bar]    ← desk surface
+     [patient row] ← in front of desk  (or idle message)
+════════════════════════════════════════ */
+function updateRoomDisplay(mode) {
+  const state   = algos[mode];
+  const flashEl = document.getElementById(`room-${mode}`);
+  const innerEl = document.getElementById(`room-inner-${mode}`);
+  if (!flashEl || !innerEl) return;
+
+  const isEmergency = state.active && state.active.is_emergency;
+  // Flash effect removed — too distracting
+  flashEl.classList.remove('room-flash');
+
+  // Don't show patient inside until the walk animation has had time to complete
+  const walkPending = Date.now() < (roomShowPatientAt[mode] || 0);
+
+  if (!state.active || walkPending) {
+    // Doctor alone, drinking coffee — centered
+    innerEl.innerHTML = `
+      <div class="room-doc-row" style="margin-top:8px">
+        <div class="char-bubble mood-ok">☕</div>
+        <div class="char-doctor-sprite" style="background-image:url('assets/char_doctor.png')"></div>
+        <div class="char-nameplate" style="color:#c8f0c8;background:rgba(0,0,0,.2)">Doctor</div>
+      </div>
+      <div class="room-desk-bar" style="margin-top:6px"></div>
+      <div style="font-size:9px;color:#a0c8a0;margin-top:6px;font-style:italic">(waiting...)</div>`;
+  } else {
+    const p   = state.active;
+    const pct = Math.max(0, (p.remaining_time / p.estimated_time * 100)).toFixed(0);
+    const starvedCls = p.has_been_starved ? 'char-starved' : '';
+    innerEl.innerHTML = `
+      <div class="room-doc-row" style="margin-top:4px">
+        <div class="char-bubble mood-seeing">✍️</div>
+        <div class="char-doctor-sprite" style="background-image:url('assets/char_doctor.png')"></div>
+        <div class="char-nameplate" style="color:#c8f0c8;background:rgba(0,0,0,.2)">Doctor</div>
+      </div>
+      <div class="room-desk-bar" style="margin-top:4px"></div>
+      <div class="room-patient-row" style="margin-top:4px">
+        <div class="char-bubble ${isEmergency?'mood-annoyed':'mood-ok'}">${isEmergency?'🚨':'🙂'}</div>
+        <div class="char-room-sprite ${starvedCls}"
+             style="background-image:url('${charSpriteUrl(p)}')"></div>
+        <div class="char-nameplate">No.${p.ticketNumber}</div>
+        <div class="room-progress"><div class="room-progress-fill" style="width:${pct}%"></div></div>
+      </div>`;
+  }
+}
+
+/* ════════════════════════════════════════
+   SCENE: RENDER HEADER FOR ACTIVE TAB
+════════════════════════════════════════ */
+function renderSceneHeader(info) {
+  const el = document.getElementById(`header-${info.mode}`);
+  if (!el) return;
+
+  const state  = algos[info.mode];
+  const all    = [...state.completed,...state.queue,...(state.active?[state.active]:[])];
+  const onTime = all.filter(p=>p.missed_count===0);
+  const avgWait= onTime.length>0
+    ?(onTime.reduce((s,p)=>s+p.waiting_time,0)/onTime.length).toFixed(1):0;
+  const maxWait= onTime.length>0?Math.max(...onTime.map(p=>p.waiting_time)):0;
+
+  el.innerHTML = `
+    <div class="scene-header-left">
+      <div class="scene-title">${escapeHtml(info.title)}</div>
+      <div class="scene-desc">${escapeHtml(info.desc)}</div>
+    </div>
+    <div class="scene-metrics">
+      <div class="scene-metric">
+        <div class="scene-metric-label">Waiting</div>
+        <div class="scene-metric-val">${state.queue.length}</div>
+      </div>
+      <div class="scene-metric">
+        <div class="scene-metric-label">Avg Wait</div>
+        <div class="scene-metric-val">${avgWait}</div>
+      </div>
+      <div class="scene-metric">
+        <div class="scene-metric-label">Max Wait</div>
+        <div class="scene-metric-val" style="color:#f87171">${maxWait}</div>
+      </div>
+      <div class="scene-metric ${state.starvationCount>0?'metric-starv-bad':'metric-starv-ok'}">
+        <div class="scene-metric-label">Starved</div>
+        <div class="scene-metric-val">${state.starvationCount}</div>
+      </div>
+      <div class="scene-metric">
+        <div class="scene-metric-label">Done</div>
+        <div class="scene-metric-val">${state.completed.length}</div>
+      </div>
+    </div>`;
+}
+
+/* ════════════════════════════════════════
+   COMPARISON BAR
+════════════════════════════════════════ */
+function renderComparisonBar() {
+  const bar = document.getElementById('comparisonBar');
+  if (!bar) return;
+  bar.innerHTML = LANE_INFO.map(info => {
+    const state  = algos[info.mode];
+    const all    = [...state.completed,...state.queue,...(state.active?[state.active]:[])];
+    const onTime = all.filter(p=>p.missed_count===0);
+    const avgWait= onTime.length>0
+      ?(onTime.reduce((s,p)=>s+p.waiting_time,0)/onTime.length).toFixed(1):'—';
+    const maxWait= onTime.length>0?Math.max(...onTime.map(p=>p.waiting_time)):0;
+    const isBad  = state.starvationCount > 0;
+
+    return `<div class="comp-col ${activeTab===info.mode?'comp-active':''}"
+                 style="border-top-color:${info.color}"
+                 onclick="switchTab('${info.mode}')">
+      <div class="comp-title">${escapeHtml(info.title)}</div>
+      <div style="display:flex;gap:16px;margin-top:4px;align-items:flex-end">
+        <div><div class="comp-metric-label">Avg Wait</div><div class="comp-metric-val">${avgWait}</div></div>
+        <div><div class="comp-metric-label">Max Wait</div><div class="comp-metric-val" style="color:#f87171">${maxWait}</div></div>
+        <div class="${isBad?'comp-starv-bad':''}"><div class="comp-metric-label">Starved</div><div class="comp-metric-val ${isBad?'':'comp-starv-ok'}">${state.starvationCount}</div></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+/* ════════════════════════════════════════
+   TAB SWITCHING
+════════════════════════════════════════ */
+function switchTab(mode) {
+  activeTab = mode;
+  // Update tab buttons
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.mode === mode);
+  });
+  // Show/hide panels
+  document.querySelectorAll('.scene-panel').forEach(panel => {
+    panel.classList.toggle('active', panel.dataset.mode === mode);
+  });
+  renderComparisonBar();
+}
+
+/* ════════════════════════════════════════
+   SCENE INIT (build static HTML once)
+════════════════════════════════════════ */
+function initScenes() {
+  const tabsEl   = document.getElementById('algoTabs');
+  const panelsEl = document.getElementById('scenePanels');
+
+  LANE_INFO.forEach((info, i) => {
+    // Tab button
+    const btn = document.createElement('button');
+    btn.className = `tab-btn${i===0?' active':''}`;
+    btn.dataset.mode = info.mode;
+    btn.textContent = info.title;
+    btn.addEventListener('click', () => switchTab(info.mode));
+    tabsEl.appendChild(btn);
+
+    // Scene panel
+    const panel = document.createElement('div');
+    panel.className = `scene-panel${i===0?' active':''}`;
+    panel.dataset.mode = info.mode;
+
+    // Header
+    const header = document.createElement('div');
+    header.id = `header-${info.mode}`;
+    header.className = 'scene-header';
+    header.style.borderLeft = `5px solid ${info.color}`;
+    panel.appendChild(header);
+
+    // Viewport
+    const vp = document.createElement('div');
+    vp.id = `viewport-${info.mode}`;
+    vp.className = 'scene-viewport';
+    vp.style.height = '430px';
+    panel.appendChild(vp);
+
+    panelsEl.appendChild(panel);
+
+    // Build static scene elements
+    buildSceneViewport(info.mode);
+  });
+}
+
+/* ════════════════════════════════════════
+   MAIN RENDER
+════════════════════════════════════════ */
+function render() {
+  // Tick display
+  const tickEl = document.getElementById('tick');
+  tickEl.classList.remove('flip'); void tickEl.offsetWidth; tickEl.classList.add('flip');
+  tickEl.textContent = tick;
+
+  document.getElementById('globalMaxCalledTicket').textContent = globalMaxCalledTicket===0?'--':globalMaxCalledTicket;
+  document.getElementById('advanceBtn').disabled = isAutoPlaying;
+  const autoBtn = document.getElementById('autoBtn');
+  autoBtn.className = `btn ${isAutoPlaying?'btn-red':'btn-orange'}`;
+  autoBtn.textContent = isAutoPlaying?'⏸️ Pause':'▶️ Auto Play';
+
+  document.getElementById('arrivalList').innerHTML = renderArrivalList();
+
+  // Update all scenes (characters update even when tab not active,
+  // so positions stay correct when switching tabs)
+  LANE_INFO.forEach(info => {
+    renderSceneHeader(info);
+    updateSceneChars(info.mode);
+
+    // Emergency flash removed
+  });
+
+  renderComparisonBar();
+
+  // Update prevActiveIds after render
+  LANE_INFO.forEach(info => {
+    prevActiveIds[info.mode] = algos[info.mode].active
+      ? algos[info.mode].active.ticketNumber : null;
+  });
+
+  renderLog();
+}
+
+/* ════════════════════════════════════════
+   EVENT LISTENERS
+════════════════════════════════════════ */
+document.getElementById('advanceBtn').addEventListener('click', advanceTick);
+document.getElementById('autoBtn').addEventListener('click', () => {
+  isAutoPlaying ? stopAutoSimulate() : triggerAutoSimulate();
+});
+document.getElementById('resetBtn').addEventListener('click', resetSystem);
+document.getElementById('logClearBtn').addEventListener('click', () => { logEntries=[]; renderLog(); });
+document.getElementById('arrivalList').addEventListener('click', e => {
+  const card = e.target.closest('[data-ticket]');
+  if (!card) return;
+  manualArrive(Number(card.dataset.ticket));
+});
+document.getElementById('speedSlider').addEventListener('input', e => {
+  autoSpeed = parseInt(e.target.value);
+  document.getElementById('speedLabel').textContent = SPEED_LABELS[autoSpeed];
+  if (isAutoPlaying) { stopAutoSimulate(); triggerAutoSimulate(); }
+});
+
+/* ════════════════════════════════════════
+   INIT
+════════════════════════════════════════ */
+initScenes();
+handleArrivalsAtTick(0, new Set(), algos);
+render();
+</script>
+</body>
+</html>
